@@ -50,6 +50,8 @@ def deserializeFromHyperBlob(rpcClient, url, marker, index_vectors ,index_conten
 
 
 def deserializeFromJSON(rpcClient, data, marker, index_vectors ,index_content, searches_vectors):
+    dtype=None
+    shape=None
     data=json.loads(data)
     for part in data:
         [text,embeddings_b64,_dtype,_shape] = part
