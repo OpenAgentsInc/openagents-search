@@ -255,7 +255,7 @@ TEMPLATES = [
             "kind": {{meta.kind}},
             "created_at": {{sys.timestamp_seconds}},
             "tags": [
-                ["param","run-on", "openagents/embeddings" ],                             
+                ["param","run-on", "openagents/search" ],                             
                 ["param", "k", "{{in.k}}"],
                 ["param", "normalize", "{{in.normalize}}"],
                 {{#in.queries}}
