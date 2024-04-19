@@ -1,4 +1,3 @@
-from sentence_transformers import SentenceTransformer
 from openagents_grpc_proto import rpc_pb2_grpc
 from openagents_grpc_proto import rpc_pb2
 import time
@@ -9,7 +8,6 @@ import pickle
 import os
 import traceback
 import base64
-from sentence_transformers.quantization import quantize_embeddings
 import faiss
 import numpy as np
 import math
