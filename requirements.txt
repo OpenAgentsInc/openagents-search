@@ -3,3 +3,4 @@ protobuf==5.26.1
 https://github.com/riccardobl/openagents-grpc-proto/releases/download/v0.6/openagents_grpc_proto-PYTHON.tar.gz
 faiss-cpu==1.8.0
 numpy==1.21.2
+packaging
