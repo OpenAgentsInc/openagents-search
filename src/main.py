@@ -14,7 +14,7 @@ class Runner (JobRunner):
         blobStorage = self.openStorage( url)
         files = blobStorage.list()
         # Find embeddings files
-        embeddings_files = [f for f in files.files if f.endswith(".embeddings")]
+        embeddings_files = [f for f in files if f.endswith(".embeddings")]
         sentences = []
         vectors = []
         dtype = None
