@@ -62,7 +62,7 @@ sockets={
                 },
                 "type":{
                     "type": "string",
-                    "description": "The type of the query embedding",
+                    "description": "The type of the query embedding. 'query' for search queries and 'index' for documents. Empty to auto-detect",
                     "name": "Type",
                     "value" : "text"
                 }

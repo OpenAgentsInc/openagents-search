@@ -139,6 +139,9 @@ class JobRunner:
         self._disksByUrl = {}
         self._diskByName = {}
 
+    def canRun(self,job):
+        return True
+        
     def preRun(self):
         pass
 
@@ -242,6 +245,8 @@ class OpenAgentsNode:
                 t=time.time()   
                 try:
                     client = self.getClient() # Reconnect client for each job
+                    if not runner.canRun(job):
+                        continue
                     client.acceptJob(rpc_pb2.RpcAcceptJob(jobId=job.id))
                     wasAccepted = True
                     self.log("Job started on node "+self.nodeName, job.id)  

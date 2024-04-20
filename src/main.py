@@ -25,13 +25,18 @@ class Runner (JobRunner):
             vectors_bytes=blobStorage.readBytes(f+".vectors")
             shape_bytes=blobStorage.readBytes(f+".shape")
             dtype_bytes=blobStorage.readBytes(f+".dtype")
-            
+            sentence_marker_bytes=blobStorage.readBytes(f+".kind")
+
             # Decode
             sentence = sentence_bytes.decode("utf-8")
             dtype = dtype_bytes.decode("utf-8")
             shape = json.loads(shape_bytes.decode("utf-8"))
             embeddings = np.frombuffer(vectors_bytes, dtype=dtype).reshape(shape)
-            
+            sentence_marker = sentence_marker_bytes.decode("utf-8")
+            if not marker: marker = sentence_marker
+            if not marker: 
+                self.log("Marker not specified, use 'passage'")
+                marker = "passage"
             # Append
             if marker == "query":
                 searches_vectors.append(embeddings)
@@ -46,7 +51,7 @@ class Runner (JobRunner):
         shape=None
         data=json.loads(data)
         for part in data:
-            [text,embeddings_b64,_dtype,_shape] = part
+            [text,embeddings_b64,_dtype,_shape, part_marker] = part
             if dtype is None: dtype = _dtype
             elif dtype != _dtype: raise Exception("Data type mismatch")
             if shape is None: shape = _shape
@@ -54,6 +59,10 @@ class Runner (JobRunner):
             # Decode
             embeddings_bytes = base64.b64decode(embeddings_b64)
             embeddings =  np.frombuffer(embeddings_bytes, dtype=dtype).reshape(shape)
+            if not marker: marker = part_marker
+            if not marker: 
+                self.log("Marker not specified, use 'passage'")
+                marker = "passage"
             # Append
             if marker == "query":
                 searches_vectors.append(embeddings)
