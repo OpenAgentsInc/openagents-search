@@ -51,7 +51,9 @@ class Runner (JobRunner):
         shape=None
         data=json.loads(data)
         for part in data:
-            [text,embeddings_b64,_dtype,_shape, part_marker] = part
+            [text,embeddings_b64,_dtype,_shape] = part
+            part_marker=part[4] if len(part)>3 else None
+            
             if dtype is None: dtype = _dtype
             elif dtype != _dtype: raise Exception("Data type mismatch")
             if shape is None: shape = _shape
