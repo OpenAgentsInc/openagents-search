@@ -20,6 +20,8 @@ class Runner (JobRunner):
         dtype = None
         shape = None
         for f in embeddings_files:
+            
+            self.log("Reading embeddings from "+f)
             # Binary read
             sentence_bytes=blobStorage.readBytes(f)
             vectors_bytes=blobStorage.readBytes(f+".vectors")
