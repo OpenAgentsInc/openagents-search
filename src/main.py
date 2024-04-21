@@ -13,6 +13,10 @@ class Runner (JobRunner):
     def deserializeFromBlob(self,  url, marker, index_vectors ,index_content, searches_vectors):
         blobStorage = self.openStorage( url)
         files = blobStorage.list()
+        self.log("Reading embeddings from "+url)
+        for f in files:
+            self.log("File "+f)
+            
         # Find embeddings files
         embeddings_files = [f for f in files if f.endswith(".embeddings")]
         sentences = []
