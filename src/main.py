@@ -28,7 +28,8 @@ class Runner (JobRunner):
         vectors = []
         dtype = None
         shape = None
-        for f in embeddings_files:
+        print("Found files "+str(embeddings_files))
+        for f in embeddings_files:            
             # Binary read
             sentence_bytes=blobStorage.readBytes(f)
             vectors_bytes=blobStorage.readBytes(f+".vectors")
