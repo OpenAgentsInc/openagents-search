@@ -114,6 +114,7 @@ class JobRunner:
             bytesOut = bytearray()
             for chunk in client.cacheGet(rpc_pb2.RpcCacheGetRequest(key=path, lastVersion = lastVersion)):
                 if not chunk.exists:
+                    print("Cache miss")
                     return None
                 bytesOut.extend(chunk.data)
             return pickle.loads(bytesOut)
@@ -221,7 +222,11 @@ class OpenAgentsNode:
                     self.channel.close()
                 except Exception as e:
                     print("Error closing channel "+str(e))
-            self.channel = grpc.insecure_channel(self.poolAddress+":"+str(self.poolPort))
+            print("Connect to "+self.poolAddress+":"+str(self.poolPort)+" with ssl "+str(self.poolSsl))
+            if self.poolSsl:
+                self.channel = grpc.secure_channel(self.poolAddress+":"+str(self.poolPort), grpc.ssl_channel_credentials())
+            else:
+                self.channel = grpc.insecure_channel(self.poolAddress+":"+str(self.poolPort))
             self.rpcClient = rpc_pb2_grpc.PoolConnectorStub(self.channel)
         return self.rpcClient
 
@@ -325,9 +330,10 @@ class OpenAgentsNode:
     def start(self, poolAddress=None, poolPort=None):
         asyncio.run(self.run(poolAddress, poolPort))
 
-    async def run(self, poolAddress=None, poolPort=None):
+    async def run(self, poolAddress=None, poolPort=None, poolSsl=False):
         self.poolAddress = poolAddress or os.getenv('POOL_ADDRESS', "127.0.0.1")
         self.poolPort = poolPort or int(os.getenv('POOL_PORT', "5000"))
+        self.poolSsl = poolSsl or os.getenv('POOL_SSL', "false")== "true"
         while True:
             try:
                 asyncio.create_task(self.loop())
