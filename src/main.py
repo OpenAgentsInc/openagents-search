@@ -15,9 +15,9 @@ class Runner (JobRunner):
     def __init__(self, filters, meta, template, sockets):
         super().__init__(filters, meta, template, sockets)
 
-    def deserializeFromBlob(self,  url,  out_vectors , out_content):
-        blobStorage = self.openStorage( url)
-        files = blobStorage.list()
+    async def deserializeFromBlob(self,  url,  out_vectors , out_content):
+        blobStorage = await self.openStorage( url)
+        files = await blobStorage.list()
         self.log("Reading embeddings from "+url)
         for f in files:
             print(f)
@@ -31,10 +31,10 @@ class Runner (JobRunner):
         print("Found files "+str(embeddings_files))
         for f in embeddings_files:            
             # Binary read
-            sentence_bytes=blobStorage.readBytes(f)
-            vectors_bytes=blobStorage.readBytes(f+".vectors")
-            shape_bytes=blobStorage.readBytes(f+".shape")
-            dtype_bytes=blobStorage.readBytes(f+".dtype")
+            sentence_bytes=await blobStorage.readBytes(f)
+            vectors_bytes=await blobStorage.readBytes(f+".vectors")
+            shape_bytes=await blobStorage.readBytes(f+".shape")
+            dtype_bytes=await blobStorage.readBytes(f+".dtype")
             # sentence_marker_bytes=blobStorage.readBytes(f+".kind")
             # Decode
             sentence = sentence_bytes.decode("utf-8")
@@ -43,10 +43,10 @@ class Runner (JobRunner):
             embeddings = np.frombuffer(vectors_bytes, dtype=dtype).reshape(shape)         
             out_vectors.append(embeddings)
             out_content.append(sentence)
-        blobStorage.close()
+        await blobStorage.close()
         return [dtype,shape]
 
-    def deserializeFromJSON( self, data,  out_vectors ,out_content):
+    async def deserializeFromJSON( self, data,  out_vectors ,out_content):
         dtype=None
         shape=None
         data=json.loads(data)
@@ -66,16 +66,16 @@ class Runner (JobRunner):
             out_content.append(text)
         return [dtype,shape]
 
-    def deserialize( self, jin,out_vectors ,out_content):
+    async def deserialize( self, jin,out_vectors ,out_content):
         dtype = None
         shape = None
         data = jin.data
         dataType = jin.type
         marker = jin.marker   
         if dataType == "application/hyperdrive+bundle":
-            [dtype,shape] = self.deserializeFromBlob(data, out_vectors, out_content)
+            [dtype,shape] = await self.deserializeFromBlob(data, out_vectors, out_content)
         else:
-            [dtype,shape] = self.deserializeFromJSON(data, out_vectors, out_content)
+            [dtype,shape] =  await self.deserializeFromJSON(data, out_vectors, out_content)
         return [dtype,shape]
 
     async def loop(self ):
@@ -147,7 +147,7 @@ class Runner (JobRunner):
             for jin in job.input:
                 if jin.marker == "query":
                     continue
-                [dtype,shape] = self.deserialize(jin,index_vectors ,index_content)               
+                [dtype,shape] = await self.deserialize(jin,index_vectors ,index_content)               
 
             index_vectors = np.array(index_vectors)
             if normalize and dtype == "float32":
@@ -170,7 +170,7 @@ class Runner (JobRunner):
             if jin.marker == "query":
                 searches_vectors = []
                 searches_content = [] 
-                [dtype,shape] = self.deserialize(jin, searches_vectors, searches_content)
+                [dtype,shape] = await self.deserialize(jin, searches_vectors, searches_content)
                 searches_vectors = np.array(searches_vectors)
 
                 if normalize and dtype == "float32":
