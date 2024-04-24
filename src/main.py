@@ -159,6 +159,7 @@ class Runner (JobRunner):
                 faiss.normalize_L2(index_vectors)
 
             # Create faiss index
+            self.log("Creating faiss index")
             faiss_index = faiss.IndexFlatL2(shape[0])
             faiss_index.add(index_vectors)
             index = [faiss_index, time.time(), index_content]
