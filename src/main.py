@@ -9,6 +9,7 @@ import faiss
 import hashlib
 import asyncio
 import time
+import os
 import gc
 class Runner (JobRunner):
     INDEXES={}
