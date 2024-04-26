@@ -18,7 +18,7 @@ class Runner (JobRunner):
 
     def __init__(self, filters, meta, template, sockets):
         super().__init__(filters, meta, template, sockets)
-        self.MAX_MEMORY_CACHE_GB = int(os.getenv('MAX_MEMORY_CACHE_GB', self.MAX_MEMORY_CACHE_GB))
+        self.MAX_MEMORY_CACHE_GB = float(os.getenv('MAX_MEMORY_CACHE_GB', self.MAX_MEMORY_CACHE_GB))
 
 
     async def deserializeFromBlob(self,  url,  out_vectors , out_content):
