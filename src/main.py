@@ -21,35 +21,63 @@ class Runner (JobRunner):
         self.MAX_MEMORY_CACHE_GB = float(os.getenv('MAX_MEMORY_CACHE_GB', self.MAX_MEMORY_CACHE_GB))
 
 
+    async def loadEmbeddingsFromBlobstore(self, i, blobStorage, f, out_vectors, out_content):
+        # Binary read
+        sentence_bytes=await blobStorage.readBytes(f)
+        vectors_bytes=await blobStorage.readBytes(f+".vectors")
+        shape_bytes=await blobStorage.readBytes(f+".shape")
+        dtype_bytes=await blobStorage.readBytes(f+".dtype")
+        # sentence_marker_bytes=blobStorage.readBytes(f+".kind")
+        # Decode
+        sentence = sentence_bytes.decode("utf-8")
+        dtype = dtype_bytes.decode("utf-8")
+        shape = json.loads(shape_bytes.decode("utf-8"))
+        embeddings = np.frombuffer(vectors_bytes, dtype=dtype).reshape(shape)         
+        out_vectors[i] = embeddings
+        out_content[i] = sentence
+
+
+
     async def deserializeFromBlob(self,  url,  out_vectors , out_content):
-        blobStorage = await self.openStorage( url)
-        files = await blobStorage.list()
+        blobDisk = await self.openStorage( url)
         self.log("Reading embeddings from "+url)
-        for f in files:
-            print(f)
-            
+        
         # Find embeddings files
-        embeddings_files = [f for f in files if f.endswith(".embeddings")]
-        sentences = []
-        vectors = []
+        sentencesIn = await blobDisk.openReadStream("sentences.bin")
+        embeddingsIn = await blobDisk.openReadStream("embeddings.bin")
+
+        # embeddings_files = [f for f in files if f.endswith(".embeddings")]
+        # self.log("Found "+str(len(embeddings_files))+" embeddings files")
+        # sentences = []
+        # vectors = []
         dtype = None
         shape = None
-        print("Found files "+str(embeddings_files))
-        for f in embeddings_files:            
-            # Binary read
-            sentence_bytes=await blobStorage.readBytes(f)
-            vectors_bytes=await blobStorage.readBytes(f+".vectors")
-            shape_bytes=await blobStorage.readBytes(f+".shape")
-            dtype_bytes=await blobStorage.readBytes(f+".dtype")
-            # sentence_marker_bytes=blobStorage.readBytes(f+".kind")
-            # Decode
-            sentence = sentence_bytes.decode("utf-8")
-            dtype = dtype_bytes.decode("utf-8")
-            shape = json.loads(shape_bytes.decode("utf-8"))
-            embeddings = np.frombuffer(vectors_bytes, dtype=dtype).reshape(shape)         
-            out_vectors.append(embeddings)
+         
+        nSentences = await sentencesIn.readInt()
+        for i in range(nSentences):
+            lenSentence = await sentencesIn.readInt()
+            sentence = await sentencesIn.read(lenSentence)
+            sentence=sentence.decode()
             out_content.append(sentence)
-        await blobStorage.close()
+
+        nEmbeddings = await embeddingsIn.readInt()
+        for i in range(nEmbeddings):
+            shape = []
+            lenShape = await embeddingsIn.readInt()
+            for j in range(lenShape):
+                shape.append(await embeddingsIn.readInt())
+
+            lenDtype = await embeddingsIn.readInt()
+            dtype = (await embeddingsIn.read(lenDtype)).decode()
+
+            lenBs = await embeddingsIn.readInt()
+            bs = await embeddingsIn.read(lenBs)
+            embeddings = np.frombuffer(bs, dtype=dtype).reshape(shape)
+            out_vectors.append(embeddings)
+                
+ 
+
+        await blobDisk.close()
         return [dtype,shape]
 
     async def deserializeFromJSON( self, data,  out_vectors ,out_content):
@@ -150,7 +178,7 @@ class Runner (JobRunner):
                 
         index = self.INDEXES.get(indexId)
         if not index:
-            self.log("Preparing index")
+            self.log("Loading index")
             index_vectors = []
             index_content = []
             dtype = None
@@ -160,6 +188,7 @@ class Runner (JobRunner):
                     continue
                 [dtype,shape] = await self.deserialize(jin,index_vectors ,index_content)               
 
+            self.log("Preparing index")
             index_vectors = np.array(index_vectors)
             if normalize and dtype == "float32":
                 faiss.normalize_L2(index_vectors)
