@@ -13,18 +13,21 @@ import os
 import gc
 
 class Runner (JobRunner):
-    INDEXES={}
-    SEARCH_QUEUE = []
-    MAX_MEMORY_CACHE_GB = 1
+   
 
     def __init__(self, filters, meta, template, sockets):
         super().__init__(filters, meta, template, sockets)
+        self.INDEXES={}
+        self.SEARCH_QUEUE = []
+        self.MAX_MEMORY_CACHE_GB = 1
+        
         self.MAX_MEMORY_CACHE_GB = float(os.getenv('MAX_MEMORY_CACHE_GB', self.MAX_MEMORY_CACHE_GB))
+        self.getLogger().info("Starting search node")
 
 
     async def deserializeFromBlob(self,  url,  out_vectors , out_content):
         blobDisk = await self.openStorage( url)
-        self.log("Reading embeddings from "+url)
+        self.getLogger().log("Reading embeddings from "+url)
         
         # Find embeddings files
         sentencesIn = await blobDisk.openReadStream("sentences.bin")
@@ -35,6 +38,7 @@ class Runner (JobRunner):
          
         nSentences = await sentencesIn.readInt()
         for i in range(nSentences):
+            self.getLogger().log("Reading sentence "+str(i))
             lenSentence = await sentencesIn.readInt()
             sentence = await sentencesIn.read(lenSentence)
             sentence=sentence.decode()
@@ -42,6 +46,7 @@ class Runner (JobRunner):
 
         nEmbeddings = await embeddingsIn.readInt()
         for i in range(nEmbeddings):
+            self.getLogger().log("Reading embeddings "+str(i))
             shape = []
             lenShape = await embeddingsIn.readInt()
             for j in range(lenShape):
@@ -61,6 +66,7 @@ class Runner (JobRunner):
         return [dtype,shape]
 
     async def deserializeFromJSON( self, data,  out_vectors ,out_content):
+        self.getLogger().log("Reading embeddings from JSON")
         dtype=None
         shape=None
         data=json.loads(data)
@@ -115,7 +121,7 @@ class Runner (JobRunner):
         
         if len(flattern_queries) == 0:
             return
-        self.log("Searching "+str(len(flattern_queries))+" queries")
+        self.getLogger().info("Searching "+str(len(flattern_queries))+" queries")
         flattern_queries=np.array(flattern_queries)
         distances, indices = faiss_index.search(flattern_queries, top_k)
         for i in range(len(queue)):
@@ -146,13 +152,13 @@ class Runner (JobRunner):
             if marker != "query":
                 indexId += jin.data
         if len(indexId) == 0:
-            self.log("No index")
+            self.getLogger().log("No index")
             return json.dumps([])
         indexId=hashlib.sha256(indexId.encode()).hexdigest() 
                 
         index = self.INDEXES.get(indexId)
         if not index:
-            self.log("Loading index")
+            self.getLogger().info("Loading index")
             index_vectors = []
             index_content = []
             dtype = None
@@ -162,24 +168,26 @@ class Runner (JobRunner):
                     continue
                 [dtype,shape] = await self.deserialize(jin,index_vectors ,index_content)               
 
-            self.log("Preparing index")
+            self.getLogger().info("Preparing index")
             index_vectors = np.array(index_vectors)
             if normalize and dtype == "float32":
                 faiss.normalize_L2(index_vectors)
 
             # Create faiss index
-            self.log("Creating faiss index")
+            self.getLogger().info("Creating faiss index")
             faiss_index = faiss.IndexFlatL2(shape[0])
             faiss_index.add(index_vectors)
+            self.getLogger().log("Counting memory usage")
             indexSizeGB = faiss_index.ntotal * shape[0] * 4 / 1024 / 1024 / 1024
             index = [faiss_index, time.time(), index_content, indexSizeGB]
             self.INDEXES[indexId] = index
-            
+
+            self.getLogger().log("Dropping oldest indexes if out of memory limit")
             # drop oldest index if out of memory limit
             totalSize = sum([x[3] for x in self.INDEXES.values()])
-            while totalSize > self.MAX_MEMORY_CACHE_GB:
+            while totalSize > self.MAX_MEMORY_CACHE_GB and len(self.INDEXES) > 1:
                 oldest = min(self.INDEXES.values(), key=lambda x: x[1])
-                self.log("Max cache size reached. Dropping oldest index.")
+                self.getLogger().log("Max cache size reached. Dropping oldest index.")
                 del self.INDEXES[oldest]
                 totalSize -= oldest[3]
             gc.collect()
@@ -187,26 +195,31 @@ class Runner (JobRunner):
 
 
         else:
-            self.log("Index already loaded")
+            self.getLogger().info("Index already loaded")
         index[1] = time.time()
 
+        self.getLogger().log("Preparing queries")
         queries = []
         for jin in job.input:
             if jin.marker == "query":
+                self.getLogger().log("Preparing query")
                 searches_vectors = []
                 searches_content = [] 
                 [dtype,shape] = await self.deserialize(jin, searches_vectors, searches_content)
                 searches_vectors = np.array(searches_vectors)
                 if normalize and dtype == "float32":
+                    self.getLogger().log("Normalizing")
                     faiss.normalize_L2(searches_vectors)
                 queries=searches_vectors
             
+        queries = [ x for x in queries if len(x) > 0]
+
         if len(queries) == 0 :
-            self.log("No queries")
+            self.getLogger().log("No queries")
             return json.dumps([])
         
         # Search faiss index        
-        self.log("Searching")
+        self.getLogger().info("Searching")
         search = next((x for x in self.SEARCH_QUEUE if x["indexId"] == indexId), None)
         if not search:
             search = {
@@ -220,7 +233,7 @@ class Runner (JobRunner):
         future =  asyncio.Future()
         def callback(distances, indices):
             # Get content for each search query and sort by score
-            self.log("Retrieving content from index")
+            self.getLogger().info("Retrieving content from index")
             output_per_search = []
             index_content = index[2]
             for i in range(len(indices)):
@@ -231,6 +244,7 @@ class Runner (JobRunner):
                 output_per_search[i] = sorted( output_per_search[i], key=lambda x: x["score"], reverse=False)
                 
             # Merge results from all searches 
+            self.getLogger().info("Merging search results")
             output = []
             i=0
             while len(output) < len(output_per_search)*top_k:
@@ -240,6 +254,7 @@ class Runner (JobRunner):
                 i+=1       
 
             # Remove duplicates
+            self.getLogger().info("Deduplicating")
             dedup = []
             dedup_ids=[]
             for o in output:
@@ -249,9 +264,11 @@ class Runner (JobRunner):
             output = dedup
             
             # truncate output
+            
             output = output[:min(top_k, len(output))]
             future.set_result(output)
 
+        self.getLogger().info("Waiting for search results")
         queue.append([
             queries,
             top_k,
@@ -260,6 +277,7 @@ class Runner (JobRunner):
         output = await future
         
         # Serialize output and return
+        self.getLogger().info("Output ready")
         return json.dumps(output)
 
 
