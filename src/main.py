@@ -11,6 +11,7 @@ import asyncio
 import time
 import os
 import gc
+
 class Runner (JobRunner):
     INDEXES={}
     SEARCH_QUEUE = []
@@ -21,23 +22,6 @@ class Runner (JobRunner):
         self.MAX_MEMORY_CACHE_GB = float(os.getenv('MAX_MEMORY_CACHE_GB', self.MAX_MEMORY_CACHE_GB))
 
 
-    async def loadEmbeddingsFromBlobstore(self, i, blobStorage, f, out_vectors, out_content):
-        # Binary read
-        sentence_bytes=await blobStorage.readBytes(f)
-        vectors_bytes=await blobStorage.readBytes(f+".vectors")
-        shape_bytes=await blobStorage.readBytes(f+".shape")
-        dtype_bytes=await blobStorage.readBytes(f+".dtype")
-        # sentence_marker_bytes=blobStorage.readBytes(f+".kind")
-        # Decode
-        sentence = sentence_bytes.decode("utf-8")
-        dtype = dtype_bytes.decode("utf-8")
-        shape = json.loads(shape_bytes.decode("utf-8"))
-        embeddings = np.frombuffer(vectors_bytes, dtype=dtype).reshape(shape)         
-        out_vectors[i] = embeddings
-        out_content[i] = sentence
-
-
-
     async def deserializeFromBlob(self,  url,  out_vectors , out_content):
         blobDisk = await self.openStorage( url)
         self.log("Reading embeddings from "+url)
@@ -46,10 +30,6 @@ class Runner (JobRunner):
         sentencesIn = await blobDisk.openReadStream("sentences.bin")
         embeddingsIn = await blobDisk.openReadStream("embeddings.bin")
 
-        # embeddings_files = [f for f in files if f.endswith(".embeddings")]
-        # self.log("Found "+str(len(embeddings_files))+" embeddings files")
-        # sentences = []
-        # vectors = []
         dtype = None
         shape = None
          
@@ -89,18 +69,12 @@ class Runner (JobRunner):
             embeddings_b64 = part[1]
             _dtype = part[2]
             _shape = part[3]
-
-            
-            # part_marker=part[4] if len(part)>4 else None
-
             if dtype is None: dtype = _dtype
             elif dtype != _dtype: raise Exception("Data type mismatch")
             if shape is None: shape = _shape
             elif shape != _shape: raise Exception("Shape mismatch")
-            # Decode
             embeddings_bytes = base64.b64decode(embeddings_b64)
             embeddings =  np.frombuffer(embeddings_bytes, dtype=dtype).reshape(shape)
-            # Append
             out_vectors.append(embeddings)
             out_content.append(text)
         return [dtype,shape]
@@ -117,8 +91,8 @@ class Runner (JobRunner):
             [dtype,shape] =  await self.deserializeFromJSON(data, out_vectors, out_content)
         return [dtype,shape]
 
-    async def loop(self ):
-        
+
+    async def loop(self ):        
         if len(self.SEARCH_QUEUE) == 0:
             await asyncio.sleep(10.0/1000.0)
             return
@@ -223,7 +197,6 @@ class Runner (JobRunner):
                 searches_content = [] 
                 [dtype,shape] = await self.deserialize(jin, searches_vectors, searches_content)
                 searches_vectors = np.array(searches_vectors)
-
                 if normalize and dtype == "float32":
                     faiss.normalize_L2(searches_vectors)
                 queries=searches_vectors
