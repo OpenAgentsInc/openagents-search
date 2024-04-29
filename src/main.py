@@ -21,7 +21,7 @@ class Runner (JobRunner):
         self.SEARCH_QUEUE = []
         self.MAX_MEMORY_CACHE_GB = 1
         
-        self.MAX_MEMORY_CACHE_GB = float(os.getenv('MAX_MEMORY_CACHE_GB', self.MAX_MEMORY_CACHE_GB))
+        self.MAX_MEMORY_CACHE_GB = float(os.getenv('SEARCH_MAX_MEMORY_CACHE_GB', self.MAX_MEMORY_CACHE_GB))
         self.getLogger().info("Starting search node")
 
 
