@@ -1,7 +1,5 @@
-from OpenAgentsNode import OpenAgentsNode
-from OpenAgentsNode import JobRunner
-import config as NodeConfig
-from events import search as SearchEvent
+from openagents import JobRunner,OpenAgentsNode,NodeConfig,RunnerConfig
+
 import base64
 import json
 import numpy as np
@@ -12,17 +10,94 @@ import time
 import os
 import gc
 
-class Runner (JobRunner):
+class SearchRunner (JobRunner):
    
 
-    def __init__(self, filters, meta, template, sockets):
-        super().__init__(filters, meta, template, sockets)
+    def __init__(self):
+        super().__init__(   \
+            RunnerConfig()\
+                .kind(5003)\
+                .name("Similarity Search")\
+                .description("Perform similarity search given some passages and queries embeddings")\
+                .tos("https://openagents.com/terms") \
+                .privacy("https://openagents.com/privacy")\
+                .author("OpenAgentsInc")\
+                .website("https://github.com/OpenAgentsInc/openagents-search")\
+                .picture("")\
+                .tags([
+                    "tool", 
+                    "embeddings-search"
+                ]) \
+                .filters()\
+                    .filterByRunOn("openagents\\/search") \
+                    .commit()\
+                .template("""{
+                    "kind": {{meta.kind}},
+                    "created_at": {{sys.timestamp_seconds}},
+                    "tags": [
+                        ["param","run-on", "openagents/search" ],                             
+                        ["param", "k", "{{in.k}}"],
+                        ["param", "normalize", "{{in.normalize}}"],
+                        ["output", "{{in.outputType}}"],
+                        {{#in.queries}}
+                        ["i", "{{value}}", "{{type}}", "",  "query"],
+                        {{/in.queries}}
+                        {{#in.indices}}
+                        ["i", "{{value}}", "{{type}}", "",  "index"],
+                        {{/in.indices}}
+                        ["expiration", "{{sys.expiration_timestamp_seconds}}"],
+                    ],
+                    "content":""
+                }
+                """)\
+                .inSocket("k","number")\
+                    .description("The number of embeddings to return")\
+                    .defaultValue(4)\
+                    .name("Top K")\
+                .commit()\
+                .inSocket("normalize","boolean")\
+                    .description("Normalize index")\
+                    .defaultValue(True)\
+                    .name("Normalize")\
+                .commit()\
+                .inSocket("queries", "map")\
+                    .description("The queries")\
+                    .schema()\
+                        .field("value", "string")\
+                            .description("Stringified JSON object or hyperdrive with the query embedding")\
+                            .commit()\
+                        .field("type", "string")\
+                            .description("The input type of the query. Either application/json or application/hyperdrive+bundle")\
+                            .defaultValue("application/json")\
+                        .commit()\
+                    .commit()\
+                .commit()\
+                .inSocket("indices", "array")\
+                    .description("The index to search on")\
+                    .schema()\
+                        .field("value", "string")\
+                            .description("Stringified JSON object or hyperdrive with the document embedding")\
+                            .commit()\
+                        .field("type", "string")\
+                            .description("The input type of the document. Either application/json or application/hyperdrive+bundle")\
+                            .defaultValue("application/json")\
+                        .commit()\
+                    .commit()\
+                .commit()\
+                .inSocket("outputType", "string")\
+                    .description("The Desired Output Type")\
+                    .defaultValue("application/json")\
+                .commit()\
+                .outSocket("output", "string")\
+                    .description("The top K embeddings encoded in json or an hyperdrive bundle url")\
+                    .name("Output")\
+                .commit()\
+            .commit()
+        )
         self.INDEXES={}
         self.SEARCH_QUEUE = []
-        self.MAX_MEMORY_CACHE_GB = 1
-        
+        self.MAX_MEMORY_CACHE_GB = 1        
         self.MAX_MEMORY_CACHE_GB = float(os.getenv('SEARCH_MAX_MEMORY_CACHE_GB', self.MAX_MEMORY_CACHE_GB))
-        self.getLogger().info("Starting search node")
 
 
     async def deserializeFromBlob(self,  url,  out_vectors , out_content):
@@ -281,6 +356,6 @@ class Runner (JobRunner):
         return json.dumps(output)
 
 
-node = OpenAgentsNode(NodeConfig.meta)
-node.registerRunner(Runner(filters=SearchEvent.filters,sockets=SearchEvent.sockets,meta=SearchEvent.meta,template=SearchEvent.template))
+node = OpenAgentsNode(NodeConfig().name("Similarity Search Node").description("This node performs similarity search on a set of embeddings").version("0.1.0"))
+node.registerRunner(SearchRunner())
 node.start()
