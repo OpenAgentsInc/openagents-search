@@ -1,4 +1,4 @@
-from openagents import JobRunner,OpenAgentsNode,NodeConfig,RunnerConfig
+from openagents import JobRunner,OpenAgentsNode,NodeConfig,RunnerConfig,JobContext
 
 import base64
 import json
@@ -10,28 +10,28 @@ import time
 import os
 import gc
 
+
 class SearchRunner (JobRunner):
    
 
     def __init__(self):
-        super().__init__(   \
-            RunnerConfig()\
-                .kind(5003)\
-                .name("Similarity Search")\
-                .description("Perform similarity search given some passages and queries embeddings")\
-                .tos("https://openagents.com/terms") \
-                .privacy("https://openagents.com/privacy")\
-                .author("OpenAgentsInc")\
-                .website("https://github.com/OpenAgentsInc/openagents-search")\
-                .picture("")\
-                .tags([
-                    "tool", 
-                    "embeddings-search"
-                ]) \
-                .filters()\
-                    .filterByRunOn("openagents\\/search") \
-                    .commit()\
-                .template("""{
+        super().__init__(   
+            RunnerConfig(
+                meta={
+                    "kind": 5003,
+                    "name": "Vector Search",
+                    "description": "Perform similarity search given some passages and queries embeddings",
+                    "tos": "https://openagents.com/terms",
+                    "privacy": "https://openagents.com/privacy",
+                    "author": "OpenAgentsInc",
+                    "web": "https://github.com/OpenAgentsInc/openagents-search",
+                    "picture": "",
+                    "tags": [
+                        "embeddings-search"
+                    ],
+                },
+                filter={"filterByRunOn": "openagents\\/search"},
+                template="""{
                     "kind": {{meta.kind}},
                     "created_at": {{sys.timestamp_seconds}},
                     "tags": [
@@ -49,71 +49,103 @@ class SearchRunner (JobRunner):
                     ],
                     "content":""
                 }
-                """)\
-                .inSocket("k","number")\
-                    .description("The number of embeddings to return")\
-                    .defaultValue(4)\
-                    .name("Top K")\
-                .commit()\
-                .inSocket("normalize","boolean")\
-                    .description("Normalize index")\
-                    .defaultValue(True)\
-                    .name("Normalize")\
-                .commit()\
-                .inSocket("queries", "map")\
-                    .description("The queries")\
-                    .schema()\
-                        .field("value", "string")\
-                            .description("Stringified JSON object or hyperdrive with the query embedding")\
-                            .commit()\
-                        .field("type", "string")\
-                            .description("The input type of the query. Either application/json or application/hyperdrive+bundle")\
-                            .defaultValue("application/json")\
-                        .commit()\
-                    .commit()\
-                .commit()\
-                .inSocket("indices", "array")\
-                    .description("The index to search on")\
-                    .schema()\
-                        .field("value", "string")\
-                            .description("Stringified JSON object or hyperdrive with the document embedding")\
-                            .commit()\
-                        .field("type", "string")\
-                            .description("The input type of the document. Either application/json or application/hyperdrive+bundle")\
-                            .defaultValue("application/json")\
-                        .commit()\
-                    .commit()\
-                .commit()\
-                .inSocket("outputType", "string")\
-                    .description("The Desired Output Type")\
-                    .defaultValue("application/json")\
-                .commit()\
-                .outSocket("output", "string")\
-                    .description("The top K embeddings encoded in json or an hyperdrive bundle url")\
-                    .name("Output")\
-                .commit()\
-            .commit()
+                """,
+                sockets={
+                    "in":{
+                        "k":{
+                            "title": "K",
+                            "description": "The number of embeddings to return",
+                            "type": "integer",
+                            "default": 4
+                        },
+                        "normalize":{
+                            "title": "Normalize",
+                            "description": "Normalize index",
+                            "type": "boolean",
+                            "default": True
+                        },
+                        "queries":{
+                            "title": "Queries",
+                            "description": "The queries",
+                            "type":"array",
+                            "items":{
+                                "type":"map",
+                                "properties":{
+                                    "value":{
+                                        "title":"Value",
+                                        "description":"Stringified JSON object or hyperdrive with the query embedding",
+                                        "type":"string"
+                                    },
+                                    "type":{
+                                        "title":"Type",
+                                        "description":"The input type of the query. Either application/json or application/hyperdrive+bundle",
+                                        "type":"string",
+                                        "default":"application/json"
+                                    }
+                                }
+                            }
+                        },
+                        "indices":{
+                            "title": "Indices",
+                            "description": "The index to search on",
+                            "type":"array",
+                            "items":{
+                                "type":"map",
+                                "properties":{
+                                    "value":{
+                                        "title":"Value",
+                                        "description":"Stringified JSON object or hyperdrive with the document embedding",
+                                        "type":"string"
+                                    },
+                                    "type":{
+                                        "title":"Type",
+                                        "description":"The input type of the document. Either application/json or application/hyperdrive+bundle",
+                                        "type":"string",
+                                        "default":"application/json"
+                                    }
+                                }
+                            }
+                        },
+                        "outputType":{
+                            "title": "Output Type",
+                            "description": "The Desired Output Type",
+                            "type": "string",
+                            "default": "application/json"
+                        },
+                    },
+                    "out":{
+                        "output":{
+                            "title": "Output",
+                            "description": "The top K embeddings encoded in json or an hyperdrive bundle url",
+                            "type": "string"
+                        }
+                    }
+                }
+
+            )
         )
         self.INDEXES={}
         self.SEARCH_QUEUE = []
         self.MAX_MEMORY_CACHE_GB = 1        
         self.MAX_MEMORY_CACHE_GB = float(os.getenv('SEARCH_MAX_MEMORY_CACHE_GB', self.MAX_MEMORY_CACHE_GB))
+        self.setRunInParallel(True)
 
+    async def deserializeFromBlob(self,  url,  out_vectors , out_content,ctx:JobContext):
+        logger=ctx.getLogger()
 
-    async def deserializeFromBlob(self,  url,  out_vectors , out_content):
-        blobDisk = await self.openStorage( url)
-        self.getLogger().log("Reading embeddings from "+url)
+        disk = await ctx.openStorage( url)
+        logger.log("Reading embeddings from "+url)
         
         # Find embeddings files
-        sentencesIn = await blobDisk.openReadStream("sentences.bin")
-        embeddingsIn = await blobDisk.openReadStream("embeddings.bin")
+        sentencesIn = await disk.openReadStream("sentences.bin")
+        embeddingsIn = await disk.openReadStream("embeddings.bin")
 
         dtype = None
         shape = None
          
         nSentences = await sentencesIn.readInt()
         for i in range(nSentences):
-            self.getLogger().log("Reading sentence "+str(i))
+            logger.log("Reading sentence "+str(i))
             lenSentence = await sentencesIn.readInt()
             sentence = await sentencesIn.read(lenSentence)
             sentence=sentence.decode()
@@ -121,7 +153,7 @@ class SearchRunner (JobRunner):
 
         nEmbeddings = await embeddingsIn.readInt()
         for i in range(nEmbeddings):
-            self.getLogger().log("Reading embeddings "+str(i))
+            logger.log("Reading embeddings "+str(i))
             shape = []
             lenShape = await embeddingsIn.readInt()
             for j in range(lenShape):
@@ -137,11 +169,12 @@ class SearchRunner (JobRunner):
                 
  
 
-        await blobDisk.close()
+        await disk.close()
         return [dtype,shape]
 
-    async def deserializeFromJSON( self, data,  out_vectors ,out_content):
-        self.getLogger().log("Reading embeddings from JSON")
+    async def deserializeFromJSON( self, data,  out_vectors ,out_content, ctx:JobContext):
+        logger=ctx.getLogger()
+        logger.log("Reading embeddings from JSON")
         dtype=None
         shape=None
         data=json.loads(data)
@@ -160,20 +193,22 @@ class SearchRunner (JobRunner):
             out_content.append(text)
         return [dtype,shape]
 
-    async def deserialize( self, jin,out_vectors ,out_content):
+    async def deserialize( self, jin,out_vectors ,out_content,ctx:JobContext):
         dtype = None
         shape = None
         data = jin.data
         dataType = jin.type
         marker = jin.marker   
         if dataType == "application/hyperdrive+bundle":
-            [dtype,shape] = await self.deserializeFromBlob(data, out_vectors, out_content)
+            [dtype,shape] = await self.deserializeFromBlob(data, out_vectors, out_content, ctx)
         else:
-            [dtype,shape] =  await self.deserializeFromJSON(data, out_vectors, out_content)
+            [dtype,shape] =  await self.deserializeFromJSON(data, out_vectors, out_content, ctx)
         return [dtype,shape]
 
 
-    async def loop(self ):        
+    async def loop(self, node:OpenAgentsNode):     
+        logger=node.getLogger()
+
         if len(self.SEARCH_QUEUE) == 0:
             await asyncio.sleep(10.0/1000.0)
             return
@@ -196,7 +231,7 @@ class SearchRunner (JobRunner):
         
         if len(flattern_queries) == 0:
             return
-        self.getLogger().info("Searching "+str(len(flattern_queries))+" queries")
+        logger.info("Searching "+str(len(flattern_queries))+" queries")
         flattern_queries=np.array(flattern_queries)
         distances, indices = faiss_index.search(flattern_queries, top_k)
         for i in range(len(queue)):
@@ -211,14 +246,13 @@ class SearchRunner (JobRunner):
         
         
 
-    async def run(self,job):
-        def getParamValue(key,default=None):
-            param = [x for x in job.param if x.key == key]
-            return param[0].value[0] if len(param) > 0 else default
-
+    async def run(self,ctx):
+       
+        logger=ctx.getLogger()
+        job=ctx.getJob()
         # Extract parameters
-        top_k = int(getParamValue("k", "4"))
-        normalize = str(getParamValue("normalize", "true"))=="true"
+        top_k = int(ctx.getJobParamValue("k", "4"))
+        normalize = str(ctx.getJobParamValue("normalize", "true"))=="true"
         
         # Deserialize inputs
         indexId=""
@@ -227,13 +261,13 @@ class SearchRunner (JobRunner):
             if marker != "query":
                 indexId += jin.data
         if len(indexId) == 0:
-            self.getLogger().log("No index")
+            logger.log("No index")
             return json.dumps([])
         indexId=hashlib.sha256(indexId.encode()).hexdigest() 
                 
         index = self.INDEXES.get(indexId)
         if not index:
-            self.getLogger().info("Loading index")
+            logger.info("Loading index")
             index_vectors = []
             index_content = []
             dtype = None
@@ -241,60 +275,57 @@ class SearchRunner (JobRunner):
             for jin in job.input:
                 if jin.marker == "query":
                     continue
-                [dtype,shape] = await self.deserialize(jin,index_vectors ,index_content)               
+                [dtype,shape] = await self.deserialize(jin,index_vectors ,index_content, ctx)               
 
-            self.getLogger().info("Preparing index")
+            logger.info("Preparing index")
             index_vectors = np.array(index_vectors)
             if normalize and dtype == "float32":
                 faiss.normalize_L2(index_vectors)
 
             # Create faiss index
-            self.getLogger().info("Creating faiss index")
+            logger.info("Creating faiss index")
             faiss_index = faiss.IndexFlatL2(shape[0])
             faiss_index.add(index_vectors)
-            self.getLogger().log("Counting memory usage")
+            logger.log("Counting memory usage")
             indexSizeGB = faiss_index.ntotal * shape[0] * 4 / 1024 / 1024 / 1024
             index = [faiss_index, time.time(), index_content, indexSizeGB]
             self.INDEXES[indexId] = index
 
-            self.getLogger().log("Dropping oldest indexes if out of memory limit")
+            logger.log("Dropping oldest indexes if out of memory limit")
             # drop oldest index if out of memory limit
             totalSize = sum([x[3] for x in self.INDEXES.values()])
             while totalSize > self.MAX_MEMORY_CACHE_GB and len(self.INDEXES) > 1:
                 oldest = min(self.INDEXES.values(), key=lambda x: x[1])
-                self.getLogger().log("Max cache size reached. Dropping oldest index.")
+                logger.log("Max cache size reached. Dropping oldest index.")
                 del self.INDEXES[oldest]
                 totalSize -= oldest[3]
             gc.collect()
-
-
-
         else:
-            self.getLogger().info("Index already loaded")
+            logger.info("Index already loaded")
         index[1] = time.time()
 
-        self.getLogger().log("Preparing queries")
+        logger.log("Preparing queries")
         queries = []
         for jin in job.input:
             if jin.marker == "query":
-                self.getLogger().log("Preparing query")
+                logger.log("Preparing query")
                 searches_vectors = []
                 searches_content = [] 
-                [dtype,shape] = await self.deserialize(jin, searches_vectors, searches_content)
+                [dtype,shape] = await self.deserialize(jin, searches_vectors, searches_content,ctx)
                 searches_vectors = np.array(searches_vectors)
                 if normalize and dtype == "float32":
-                    self.getLogger().log("Normalizing")
+                    logger.log("Normalizing")
                     faiss.normalize_L2(searches_vectors)
                 queries=searches_vectors
             
         queries = [ x for x in queries if len(x) > 0]
 
         if len(queries) == 0 :
-            self.getLogger().log("No queries")
+            logger.log("No queries")
             return json.dumps([])
         
         # Search faiss index        
-        self.getLogger().info("Searching")
+        logger.info("Searching")
         search = next((x for x in self.SEARCH_QUEUE if x["indexId"] == indexId), None)
         if not search:
             search = {
@@ -308,7 +339,7 @@ class SearchRunner (JobRunner):
         future =  asyncio.Future()
         def callback(distances, indices):
             # Get content for each search query and sort by score
-            self.getLogger().info("Retrieving content from index")
+            logger.info("Retrieving content from index")
             output_per_search = []
             index_content = index[2]
             for i in range(len(indices)):
@@ -319,7 +350,7 @@ class SearchRunner (JobRunner):
                 output_per_search[i] = sorted( output_per_search[i], key=lambda x: x["score"], reverse=False)
                 
             # Merge results from all searches 
-            self.getLogger().info("Merging search results")
+            logger.info("Merging search results")
             output = []
             i=0
             while len(output) < len(output_per_search)*top_k:
@@ -329,7 +360,7 @@ class SearchRunner (JobRunner):
                 i+=1       
 
             # Remove duplicates
-            self.getLogger().info("Deduplicating")
+            logger.info("Deduplicating")
             dedup = []
             dedup_ids=[]
             for o in output:
@@ -343,7 +374,7 @@ class SearchRunner (JobRunner):
             output = output[:min(top_k, len(output))]
             future.set_result(output)
 
-        self.getLogger().info("Waiting for search results")
+        logger.info("Waiting for search results")
         queue.append([
             queries,
             top_k,
@@ -352,10 +383,14 @@ class SearchRunner (JobRunner):
         output = await future
         
         # Serialize output and return
-        self.getLogger().info("Output ready")
+        logger.info("Output ready")
         return json.dumps(output)
 
 
-node = OpenAgentsNode(NodeConfig().name("Similarity Search Node").description("This node performs similarity search on a set of embeddings").version("0.1.0"))
+node = OpenAgentsNode(NodeConfig({
+    "name": "OpenAgents Vector Search Service",
+    "description": "Perform similarity search given some passages and queries embeddings",
+    "version": "0.0.1",
+}))
 node.registerRunner(SearchRunner())
 node.start()
