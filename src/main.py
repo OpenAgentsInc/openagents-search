@@ -32,20 +32,20 @@ class SearchRunner (JobRunner):
                 },
                 filter={"filterByRunOn": "openagents\\/search"},
                 template="""{
-                    "kind": {{meta.kind}},
-                    "created_at": {{sys.timestamp_seconds}},
+                    "kind": {{{meta.kind}}},
+                    "created_at": {{{sys.timestamp_seconds}}},
                     "tags": [
                         ["param","run-on", "openagents/search" ],                             
-                        ["param", "k", "{{in.k}}"],
-                        ["param", "normalize", "{{in.normalize}}"],
-                        ["output", "{{in.outputType}}"],
+                        ["param", "k", "{{{in.k}}}"],
+                        ["param", "normalize", "{{{in.normalize}}}"],
+                        ["output", "{{{in.outputType}}}"],
                         {{#in.queries}}
-                        ["i", "{{value}}", "{{type}}", "",  "query"],
+                        ["i", "{{value}}", "{{{type}}}", "",  "query"],
                         {{/in.queries}}
                         {{#in.indices}}
-                        ["i", "{{value}}", "{{type}}", "",  "index"],
+                        ["i", "{{value}}", "{{{type}}}", "",  "index"],
                         {{/in.indices}}
-                        ["expiration", "{{sys.expiration_timestamp_seconds}}"],
+                        ["expiration", "{{{sys.expiration_timestamp_seconds}}}"]
                     ],
                     "content":""
                 }
