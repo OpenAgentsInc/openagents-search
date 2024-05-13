@@ -1,5 +1,5 @@
 faiss-cpu==1.8.0
-numpy==1.21.2
+numpy==1.26.4
 packaging
 requests
 openagents-node-sdk==0.3.4
